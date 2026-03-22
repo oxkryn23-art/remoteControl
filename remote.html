@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>PC Remote</title>
+  <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    :root {
+      --bg:       #0f0f13;
+      --surface:  #1a1a22;
+      --card:     #22222e;
+      --border:   #2e2e3e;
+      --accent:   #7c6af7;
+      --accent2:  #4ecdc4;
+      --text:     #e8e8f0;
+      --muted:    #7070a0;
+      --danger:   #e05555;
+      --radius:   16px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      padding-bottom: 2rem;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.5px; }
+
+    #conn-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--danger);
+      transition: background 0.3s;
+    }
+    #conn-dot.connected { background: var(--accent2); }
+
+    .tabs {
+      display: flex;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 53px;
+      z-index: 9;
+    }
+    .tab {
+      flex: 1;
+      padding: 12px 0;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+      user-select: none;
+    }
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .panel { display: none; padding: 16px; }
+    .panel.active { display: block; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .card-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    #touchpad {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      height: 280px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 13px;
+      user-select: none;
+      touch-action: none;
+      margin-bottom: 14px;
+      position: relative;
+      overflow: hidden;
+    }
+    #touchpad::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 50%, rgba(124,106,247,0.04) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .mouse-btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .btn {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 14px 10px;
+      cursor: pointer;
+      text-align: center;
+      user-select: none;
+      transition: background 0.15s, transform 0.1s;
+      -webkit-user-select: none;
+    }
+    .btn:active { background: var(--accent); transform: scale(0.96); }
+    .btn.accent { background: var(--accent); border-color: var(--accent); }
+    .btn.wide { grid-column: 1 / -1; }
+
+    .vol-display {
+      font-size: 52px;
+      font-weight: 700;
+      text-align: center;
+      color: var(--accent);
+      margin: 8px 0 4px;
+      letter-spacing: -2px;
+    }
+    .vol-label {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 16px;
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border);
+      outline: none;
+      margin: 8px 0 16px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 0 4px rgba(124,106,247,0.2);
+    }
+
+    .media-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .media-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 10px;
+      text-align: center;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .media-btn:active { background: rgba(124,106,247,0.25); transform: scale(0.93); }
+    .media-btn .icon { font-size: 26px; display: block; margin-bottom: 4px; }
+    .media-btn .lbl  { font-size: 11px; color: var(--muted); }
+
+    #mute-btn { width: 100%; margin-top: 12px; }
+    #mute-btn.muted {
+      background: rgba(224,85,85,0.2);
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    #text-input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 15px;
+      padding: 14px 16px;
+      outline: none;
+      margin-bottom: 10px;
+    }
+    #text-input:focus { border-color: var(--accent); }
+
+    .key-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--accent);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 500;
+      transition: transform 0.3s;
+      pointer-events: none;
+      z-index: 100;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <h1>💻 PC Remote</h1>
+  <div style="display:flex; align-items:center; gap:8px;">
+    <span style="font-size:12px; color:var(--muted);" id="conn-text">Připojování…</span>
+    <div id="conn-dot"></div>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="touchpad">🖱 Touchpad</div>
+  <div class="tab" data-tab="sound">🔊 Zvuk</div>
+  <div class="tab" data-tab="keyboard">⌨ Klávesy</div>
+</div>
+
+<div class="panel active" id="panel-touchpad">
+  <div id="touchpad">
+    <span id="touchpad-hint">Táhni prstem pro pohyb myší</span>
+  </div>
+  <div class="mouse-btns">
+    <div class="btn" id="btn-left">◀ Levé tlačítko</div>
+    <div class="btn" id="btn-right">Pravé tlačítko ▶</div>
+    <div class="btn wide" id="btn-scroll-up">▲ Scroll nahoru</div>
+    <div class="btn wide" id="btn-scroll-down">▼ Scroll dolů</div>
+  </div>
+</div>
+
+<div class="panel" id="panel-sound">
+  <div class="card">
+    <div class="card-title">Hlasitost</div>
+    <div class="vol-display" id="vol-number">--</div>
+    <div class="vol-label">%</div>
+    <input type="range" id="vol-slider" min="0" max="100" value="50">
+    <div class="btn" id="mute-btn">🔇 Mute</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Přehrávač médií</div>
+    <div class="media-grid">
+      <div class="media-btn" data-action="prev">
+        <span class="icon">⏮</span>
+        <span class="lbl">Předchozí</span>
+      </div>
+      <div class="media-btn" data-action="play_pause">
+        <span class="icon">⏯</span>
+        <span class="lbl">Play/Pause</span>
+      </div>
+      <div class="media-btn" data-action="next">
+        <span class="icon">⏭</span>
+        <span class="lbl">Další</span>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Výstupní zařízení</div>
+    <div id="devices-list" style="color:var(--muted); font-size:13px;">Načítám zařízení…</div>
+  </div>
+</div>
+
+<div class="panel" id="panel-keyboard">
+  <div class="card">
+    <div class="card-title">Odeslat text</div>
+    <input type="text" id="text-input" placeholder="Napiš text a stiskni Odeslat…">
+    <div class="btn accent" id="send-text-btn">➤ Odeslat text</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Speciální klávesy</div>
+    <div class="key-grid">
+      <div class="btn" data-key="enter">↵ Enter</div>
+      <div class="btn" data-key="backspace">⌫ Del</div>
+      <div class="btn" data-key="escape">Esc</div>
+      <div class="btn" data-key="tab">⇥ Tab</div>
+      <div class="btn" data-key="up">▲</div>
+      <div class="btn" data-key="down">▼</div>
+      <div class="btn" data-key="left">◀</div>
+      <div class="btn" data-key="right">▶</div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const SERVER_IP   = window.location.hostname;
+const SERVER_PORT = 5000;
+const BASE_URL    = `http://${SERVER_IP}:${SERVER_PORT}`;
+
+const socket = io(BASE_URL, { transports: ['websocket'] });
+
+socket.on('connect', () => {
+  document.getElementById('conn-dot').classList.add('connected');
+  document.getElementById('conn-text').textContent = 'Připojeno';
+  loadVolume();
+  loadDevices();
+});
+
+socket.on('disconnect', () => {
+  document.getElementById('conn-dot').classList.remove('connected');
+  document.getElementById('conn-text').textContent = 'Odpojeno';
+});
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// prepinani zalozek
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(`panel-${tab.dataset.tab}`).classList.add('active');
+  });
+});
+
+// touchpad - relativni pohyb prstu -> pohyb mysi
+const touchpad = document.getElementById('touchpad');
+const hint     = document.getElementById('touchpad-hint');
+let lastX = null, lastY = null;
+const SENSITIVITY = 1.8;
+
+touchpad.addEventListener('touchstart', e => {
+  e.preventDefault();
+  lastX = e.touches[0].clientX;
+  lastY = e.touches[0].clientY;
+  hint.style.opacity = '0';
+}, { passive: false });
+
+touchpad.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const dx = (e.touches[0].clientX - lastX) * SENSITIVITY;
+  const dy = (e.touches[0].clientY - lastY) * SENSITIVITY;
+  lastX = e.touches[0].clientX;
+  lastY = e.touches[0].clientY;
+  socket.emit('mouse_move', { dx: Math.round(dx), dy: Math.round(dy) });
+}, { passive: false });
+
+touchpad.addEventListener('touchend', () => { lastX = null; lastY = null; });
+
+document.getElementById('btn-left').addEventListener('click', () => {
+  socket.emit('mouse_click', { button: 'left' });
+  showToast('Levý klik');
+});
+document.getElementById('btn-right').addEventListener('click', () => {
+  socket.emit('mouse_click', { button: 'right' });
+  showToast('Pravý klik');
+});
+document.getElementById('btn-scroll-up').addEventListener('click', () => socket.emit('mouse_scroll', { dy: 3 }));
+document.getElementById('btn-scroll-down').addEventListener('click', () => socket.emit('mouse_scroll', { dy: -3 }));
+
+// hlasitost
+const volNumber = document.getElementById('vol-number');
+const volSlider = document.getElementById('vol-slider');
+const muteBtn   = document.getElementById('mute-btn');
+
+async function loadVolume() {
+  try {
+    const data = await fetch(`${BASE_URL}/volume`).then(r => r.json());
+    volNumber.textContent = data.volume;
+    volSlider.value       = data.volume;
+    updateMuteBtn(data.muted);
+  } catch (e) {
+    volNumber.textContent = '?';
+  }
+}
+
+volSlider.addEventListener('input', async () => {
+  const vol = volSlider.value;
+  volNumber.textContent = vol;
+  try {
+    await fetch(`${BASE_URL}/volume`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ volume: parseInt(vol) })
+    });
+  } catch (e) {}
+});
+
+muteBtn.addEventListener('click', async () => {
+  try {
+    const data = await fetch(`${BASE_URL}/mute`, { method: 'POST' }).then(r => r.json());
+    updateMuteBtn(data.muted);
+    showToast(data.muted ? '🔇 Ztišeno' : '🔊 Zvuk zapnut');
+  } catch (e) { showToast('Chyba připojení'); }
+});
+
+function updateMuteBtn(muted) {
+  muteBtn.textContent = muted ? '🔇 Zapnout zvuk' : '🔊 Ztišit (Mute)';
+  muteBtn.classList.toggle('muted', muted);
+}
+
+// media tlacitka
+document.querySelectorAll('.media-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    try {
+      await fetch(`${BASE_URL}/media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: btn.dataset.action })
+      });
+    } catch (e) {}
+  });
+});
+
+// seznam audio zarizeni
+async function loadDevices() {
+  try {
+    const data = await fetch(`${BASE_URL}/devices`).then(r => r.json());
+    const list = document.getElementById('devices-list');
+    if (!data.devices.length) { list.textContent = 'Žádná zařízení'; return; }
+    list.innerHTML = data.devices.map(d =>
+      `<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">🔈 ${d.name}</div>`
+    ).join('');
+  } catch (e) {
+    document.getElementById('devices-list').textContent = 'Nelze načíst zařízení';
+  }
+}
+
+// klavesnice
+async function sendText(text) {
+  if (!text.trim()) return;
+  try {
+    await fetch(`${BASE_URL}/keyboard`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    showToast('Text odeslán ✓');
+  } catch (e) { showToast('Chyba připojení'); }
+}
+
+document.getElementById('send-text-btn').addEventListener('click', () => {
+  const input = document.getElementById('text-input');
+  sendText(input.value);
+  input.value = '';
+});
+
+document.querySelectorAll('[data-key]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    try {
+      await fetch(`${BASE_URL}/keyboard`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: btn.dataset.key })
+      });
+    } catch (e) {}
+  });
+});
+</script>
+</body>
+</html>
