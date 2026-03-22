@@ -1,6 +1,6 @@
 # PC Remote
 
-Control your PC from your phone's browser. No app to install, no accounts — just WiFi.
+Control your PC from your mobile phone through local WiFi.
 
 **Features:**
 - touchpad with left/right click and scroll
